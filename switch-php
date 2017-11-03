@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Required `brew`
+# first, make sure your mac installed php by brew (with any versions)
+# on laptop, i have 2 versions php56 (magento 1) and php71 (magento 2)
+#    ex: brew install php56 --with-httpd
+#    ex: brew install php71 --with-httpd
+
+# Check if command was ran as root.
+if [[ $(id -u) -eq 0 ]]; then
+  echo "The command \"sphp\" should not be executed as root or via sudo directly."
+  echo "When a service requires root access, you will be prompted for a password as needed."
+  exit 1
+fi
+
+# Usage
+if [ $# -ne 1 ]; then
+  echo "Usage: sphp [phpversion]"
+  echo "Versions installed:"
+  brew list | grep '^php[0-9]\{2,\}$' | grep -o -E '[0-9]+' | while read -r line ; do
+    echo " - phpversion: $line"
+  done
+  exit 1
+fi
+
+currentversion="`php -r \"error_reporting(0); echo str_replace('.', '', substr(phpversion(), 0, 3));\"`"
+newversion="$1"
+
+majorOld=${currentversion:0:1}
+minorOld=${currentversion:1:1}
+majorNew=${newversion:0:1}
+minorNew=${newversion:1:1}
+
+brew list php$newversion 2> /dev/null > /dev/null
+if [ $? -eq 0 ]; then
+  if [ "${newversion}" == "${currentversion}" ]; then
+    echo "PHP version ${newversion} is already being used"
+    exit 1
+  fi
+
+  echo "PHP version $newversion found"
+  echo "Switch from php${currentversion} to php${newversion}"
+
+  echo "unlink php${currentversion} ..."
+  brew unlink php$currentversion 2> /dev/null > /dev/null
+
+  echo "link php${newversion} ..."
+  brew link php$newversion 2> /dev/null > /dev/null
+
+  # get httpd config file path
+  apache_http_conf_file=`httpd -V | grep -i server_config_file | cut -d '"' -f 2`
+  echo "updating ${apache_http_conf_file}"
+
+  # unload module of current version
+  sed -i -e "s/LoadModule php${majorOld}_module/#LoadModule php${majorOld}_module/g" $apache_http_conf_file
+
+  # unload module of old version
+  sed -i -e "s/#LoadModule php${majorNew}_module/LoadModule php${majorNew}_module/g" $apache_http_conf_file
+
+  # check Apache2 config
+  result="`apachectl configtest 2>&1`"
+  if [ "${result}" == "Syntax OK" ]; then
+    echo "Restarting Apache2.4 ..."
+    sudo apachectl -k restart
+
+    php -v
+  else
+    echo "Httpd Configuration Failed. Run 'apachectl configtest' to see details"
+    echo "1. Please check PHP version 'php -v'"
+    echo "2. Please check ${apache_http_conf_file} near LoadModule ..."
+  fi
+else
+  echo "PHP version $majorNew.$minorNew was not found."
+  echo "Try \`brew install php${newversion}\` first."
+  exit 1
+fi
+
