@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# Required `brew`
-# first, make sure your mac installed php by brew (with any versions)
-# on laptop, i have 2 versions php56 (magento 1) and php71 (magento 2)
-#    ex: brew install php56 --with-httpd
-#    ex: brew install php71 --with-httpd
-
 # Check if command was ran as root.
 if [[ $(id -u) -eq 0 ]]; then
   echo "The command \"sphp\" should not be executed as root or via sudo directly."
@@ -34,40 +28,42 @@ minorNew=${newversion:1:1}
 brew list php$newversion 2> /dev/null > /dev/null
 if [ $? -eq 0 ]; then
   if [ "${newversion}" == "${currentversion}" ]; then
-    echo "PHP version ${newversion} is already being used"
+    echo "PHP version [${newversion}] is already being used"
     exit 1
   fi
 
-  echo "PHP version $newversion found"
-  echo "Switch from php${currentversion} to php${newversion}"
+  echo "PHP version [$newversion] found"
+  echo "Switching from [php${currentversion}] to [php${newversion}] ... "
 
-  echo "unlink php${currentversion} ..."
+  printf "Unlink php${currentversion} ... "
   brew unlink php$currentversion 2> /dev/null > /dev/null
+  printf "[OK] and "
 
-  echo "link php${newversion} ..."
+  printf "Link php${newversion} ... "
   brew link php$newversion 2> /dev/null > /dev/null
+  printf "[OK]\n"
 
-  # get httpd config file path
   apache_http_conf_file=`httpd -V | grep -i server_config_file | cut -d '"' -f 2`
-  echo "updating ${apache_http_conf_file}"
+  printf "Updating Apache2.4 Configuration ${apache_http_conf_file} ... "
 
   # unload module of current version
   sed -i -e "s/LoadModule php${majorOld}_module/#LoadModule php${majorOld}_module/g" $apache_http_conf_file
 
   # unload module of old version
   sed -i -e "s/#LoadModule php${majorNew}_module/LoadModule php${majorNew}_module/g" $apache_http_conf_file
+  printf "[OK]\n"
 
   # check Apache2 config
   result="`apachectl configtest 2>&1`"
   if [ "${result}" == "Syntax OK" ]; then
-    echo "Restarting Apache2.4 ..."
+    printf "Restarting Apache2.4 ... "
     sudo apachectl -k restart
-
+    echo "[OK]"
     php -v
   else
     echo "Httpd Configuration Failed. Run 'apachectl configtest' to see details"
     echo "1. Please check PHP version 'php -v'"
-    echo "2. Please check ${apache_http_conf_file} near LoadModule ..."
+    echo "2. Please check ${apache_http_conf_file} near by LoadModule ..."
   fi
 else
   echo "PHP version $majorNew.$minorNew was not found."
@@ -75,3 +71,4 @@ else
   exit 1
 fi
 
+echo "DONE!"
